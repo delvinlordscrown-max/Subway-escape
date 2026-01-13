@@ -1,0 +1,231 @@
+using UnityEngine;
+using UnityEngine.UI;
+using System.Collections;
+
+public class EndlessRunnerGame : MonoBehaviour
+{
+    /* ================= PLAYER ================= */
+    public Rigidbody playerRB;
+    public Transform player;
+    public float forwardSpeed = 12f;
+    public float laneDistance = 3f;
+    public float jumpForce = 7f;
+
+    int currentLane = 1;
+    bool isGrounded = true;
+    bool jetpackActive = false;
+
+    /* ================= CAMERA ================= */
+    public Transform cameraTransform;
+    public Vector3 cameraOffset = new Vector3(0, 6, -10);
+    public float cameraSmooth = 8f;
+
+    /* ================= COINS & UI ================= */
+    public int coins;
+    public Text coinText;
+
+    /* ================= SHOP ================= */
+    public GameObject[] characters;
+    int selectedCharacter;
+
+    public int jetpackPrice = 100;
+    bool jetpackUnlocked = false;
+
+    /* ================= SWIPE ================= */
+    Vector2 startTouch;
+    bool swiping;
+
+    void Start()
+    {
+        Time.timeScale = 1f;
+
+        coins = PlayerPrefs.GetInt("Coins", 0);
+        selectedCharacter = PlayerPrefs.GetInt("Character", 0);
+        jetpackUnlocked = PlayerPrefs.GetInt("Jetpack", 0) == 1;
+
+        ActivateCharacter();
+    }
+
+    void Update()
+    {
+        RunForward();
+        HandleInput();
+        UpdateUI();
+    }
+
+    void LateUpdate()
+    {
+        CameraFollow();
+    }
+
+    /* ================= CORE MOVEMENT ================= */
+
+    void RunForward()
+    {
+        player.Translate(Vector3.forward * forwardSpeed * Time.deltaTime);
+    }
+
+    void HandleInput()
+    {
+        // PC
+        if (Input.GetKeyDown(KeyCode.A)) MoveLeft();
+        if (Input.GetKeyDown(KeyCode.D)) MoveRight();
+        if (Input.GetKeyDown(KeyCode.Space)) Jump();
+
+        // MOBILE
+        if (Input.touchCount > 0)
+        {
+            Touch touch = Input.GetTouch(0);
+
+            if (touch.phase == TouchPhase.Began)
+            {
+                startTouch = touch.position;
+                swiping = true;
+            }
+            else if (touch.phase == TouchPhase.Ended && swiping)
+            {
+                Vector2 delta = touch.position - startTouch;
+                swiping = false;
+
+                if (Mathf.Abs(delta.x) > Mathf.Abs(delta.y))
+                {
+                    if (delta.x > 50) MoveRight();
+                    else if (delta.x < -50) MoveLeft();
+                }
+                else
+                {
+                    if (delta.y > 50) Jump();
+                }
+            }
+        }
+    }
+
+    void MoveLeft()
+    {
+        currentLane = Mathf.Clamp(currentLane - 1, 0, 2);
+        UpdateLane();
+    }
+
+    void MoveRight()
+    {
+        currentLane = Mathf.Clamp(currentLane + 1, 0, 2);
+        UpdateLane();
+    }
+
+    void UpdateLane()
+    {
+        Vector3 pos = player.position;
+        pos.x = (currentLane - 1) * laneDistance;
+        player.position = pos;
+    }
+
+    void Jump()
+    {
+        if (isGrounded && !jetpackActive)
+        {
+            playerRB.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
+            isGrounded = false;
+        }
+    }
+
+    /* ================= CAMERA ================= */
+
+    void CameraFollow()
+    {
+        Vector3 desired = player.position + cameraOffset;
+        cameraTransform.position = Vector3.Lerp(
+            cameraTransform.position,
+            desired,
+            cameraSmooth * Time.deltaTime
+        );
+    }
+
+    /* ================= COLLISIONS ================= */
+
+    void OnCollisionEnter(Collision col)
+    {
+        if (col.gameObject.CompareTag("Ground"))
+            isGrounded = true;
+
+        if (col.gameObject.CompareTag("Obstacle") && !jetpackActive)
+            GameOver();
+    }
+
+    void OnTriggerEnter(Collider col)
+    {
+        if (col.CompareTag("Coin"))
+        {
+            coins++;
+            Destroy(col.gameObject);
+        }
+
+        if (col.CompareTag("Jetpack") && jetpackUnlocked)
+        {
+            StartCoroutine(JetpackRoutine());
+            Destroy(col.gameObject);
+        }
+    }
+
+    /* ================= JETPACK ================= */
+
+    IEnumerator JetpackRoutine()
+    {
+        jetpackActive = true;
+        playerRB.useGravity = false;
+
+        float timer = 0;
+        while (timer < 6f)
+        {
+            player.position = new Vector3(player.position.x, 8f, player.position.z);
+            timer += Time.deltaTime;
+            yield return null;
+        }
+
+        playerRB.useGravity = true;
+        jetpackActive = false;
+    }
+
+    /* ================= SHOP SYSTEM ================= */
+
+    public void BuyJetpack()
+    {
+        if (coins >= jetpackPrice && !jetpackUnlocked)
+        {
+            coins -= jetpackPrice;
+            jetpackUnlocked = true;
+            PlayerPrefs.SetInt("Jetpack", 1);
+        }
+    }
+
+    public void SelectCharacter(int index)
+    {
+        if (index < characters.Length)
+        {
+            selectedCharacter = index;
+            PlayerPrefs.SetInt("Character", index);
+            ActivateCharacter();
+        }
+    }
+
+    void ActivateCharacter()
+    {
+        for (int i = 0; i < characters.Length; i++)
+            characters[i].SetActive(i == selectedCharacter);
+    }
+
+    /* ================= UI ================= */
+
+    void UpdateUI()
+    {
+        coinText.text = "Coins: " + coins;
+        PlayerPrefs.SetInt("Coins", coins);
+    }
+
+    /* ================= GAME OVER ================= */
+
+    void GameOver()
+    {
+        Time.timeScale = 0;
+        Debug.Log("GAME OVER");
+    }
+}
